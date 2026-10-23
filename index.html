@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#174b43">
+<meta name="description" content="Calendario personale dei turni di lavoro">
+<link rel="manifest" href="manifest.json">
+<title>I miei turni</title>
+<style>
+:root{--bg:#f4f7f6;--ink:#172b28;--muted:#61716d;--green:#174b43;--line:#dce5e2;--card:#fff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+header{background:var(--green);color:white;padding:24px 18px 20px;border-radius:0 0 22px 22px}
+h1{font-size:25px;margin:0 0 5px}header p{margin:0;color:#d9e9e5;font-size:14px}
+main{max-width:700px;margin:auto;padding:16px}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:4px 0 14px}
+button,.btn{font:inherit;border:0;border-radius:12px;padding:10px 13px;background:var(--green);color:#fff;cursor:pointer}
+button.secondary{background:#e2ece8;color:var(--green)}.weektitle{font-weight:750;text-align:center;flex:1;font-size:15px}
+.summary{display:flex;gap:10px;margin-bottom:14px}.stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;flex:1}.stat small{display:block;color:var(--muted)}.stat strong{font-size:21px}
+.days{display:grid;gap:10px}.day{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center}
+.day.today{border:2px solid var(--green)}.dayname{font-weight:750}.date{font-size:13px;color:var(--muted);margin-left:6px}.badge{display:inline-block;margin-top:6px;padding:5px 9px;border-radius:999px;background:#e2ece8;color:#174b43;font-size:12px;font-weight:700}.badge.notte{background:#e8e5f8;color:#494080}.badge.riposo{background:#ecefed;color:#5d6864}.hours{font-size:13px;color:var(--muted);margin-top:5px}.edit{padding:9px 12px}
+dialog{border:0;border-radius:20px;padding:0;width:min(92vw,430px);box-shadow:0 20px 70px #0003}dialog::backdrop{background:#102a2580}.form{padding:20px}.form h2{margin:0 0 16px;font-size:21px}label{display:block;font-size:13px;color:var(--muted);margin:12px 0 5px}input,select,textarea{width:100%;font:inherit;border:1px solid var(--line);border-radius:10px;padding:11px;background:white;color:var(--ink)}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.actions{display:flex;gap:8px;margin-top:20px}.actions button{flex:1}.actions .delete{background:#f8e7e5;color:#a32d25}.foot{text-align:center;color:var(--muted);font-size:12px;padding:18px 4px 28px}
+</style>
+</head>
+<body>
+<header><h1>📅 I miei turni</h1><p>Il tuo calendario personale, da lunedì a domenica</p></header>
+<main>
+<div class="toolbar"><button class="secondary" id="prev" aria-label="Settimana precedente">‹</button><div class="weektitle" id="weektitle"></div><button class="secondary" id="next" aria-label="Settimana successiva">›</button></div>
+<div class="summary"><div class="stat"><small>Ore questa settimana</small><strong id="total">0 h</strong></div><div class="stat"><small>Giorni lavorativi</small><strong id="worked">0</strong></div></div>
+<div class="days" id="days"></div>
+<div class="foot">I turni vengono salvati su questo dispositivo. Tocca “Modifica” per personalizzare ogni giorno.</div>
+</main>
+<dialog id="editor"><form class="form" id="shiftform"><h2 id="formtitle">Modifica turno</h2><input type="hidden" id="datekey">
+<label for="kind">Tipo di giornata</label><select id="kind"><option value="Mattina">Mattina</option><option value="Pomeriggio">Pomeriggio</option><option value="Notte">Notte</option><option value="Turno">Altro turno</option><option value="Riposo">Riposo</option><option value="Ferie">Ferie</option><option value="Malattia">Malattia</option></select>
+<div class="row"><div><label for="start">Inizio</label><input id="start" type="time" value="06:00"></div><div><label for="end">Fine</label><input id="end" type="time" value="14:00"></div></div>
+<label for="note">Note (facoltative)</label><textarea id="note" rows="2" placeholder="Es. sede, reparto…"></textarea>
+<div class="actions"><button type="button" class="delete" id="clear">Svuota</button><button type="button" class="secondary" id="cancel">Annulla</button><button type="submit">Salva</button></div>
+</form></dialog>
+<script>
+const $=id=>document.getElementById(id);
+const storeKey='miei-turni-v1'; let shifts=JSON.parse(localStorage.getItem(storeKey)||'{}');
+let offset=0;
+const names=['Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica'];
+function monday(d){let x=new Date(d);x.setHours(12,0,0,0);x.setDate(x.getDate()-((x.getDay()+6)%7));return x}
+function key(d){return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function parseTime(t){if(!t)return null;let [h,m]=t.split(':').map(Number);return h*60+m}
+function duration(s){if(!s||s.kind==='Riposo'||s.kind==='Ferie'||s.kind==='Malattia')return 0;let a=parseTime(s.start),b=parseTime(s.end);if(a===null||b===null)return 0;if(b<a)b+=1440;return Math.max(0,(b-a)/60)}
+function fmt(d){return d.toLocaleDateString('it-IT',{day:'numeric',month:'short'})}
+function save(){localStorage.setItem(storeKey,JSON.stringify(shifts));render()}
+function render(){
+ let start=monday(new Date());start.setDate(start.getDate()+offset*7);
+ let end=new Date(start);end.setDate(end.getDate()+6);
+ $('weektitle').textContent=`${fmt(start)} – ${fmt(end)} ${end.getFullYear()}`;
+ $('days').innerHTML='';let total=0,worked=0;const today=key(new Date());
+ for(let i=0;i<7;i++){let d=new Date(start);d.setDate(start.getDate()+i);let k=key(d),s=shifts[k]||{kind:'Riposo',start:'',end:'',note:''},hrs=duration(s);total+=hrs;if(hrs>0)worked++;
+ let card=document.createElement('section');card.className='day'+(k===today?' today':'');
+ let badgeClass=s.kind==='Notte'?'notte':s.kind==='Riposo'?'riposo':'';
+ let detail=(s.kind==='Riposo'||s.kind==='Ferie'||s.kind==='Malattia')?'':`${s.start||'--:--'} – ${s.end||'--:--'}`;
+ card.innerHTML=`<div><div><span class="dayname">${names[i]}</span><span class="date">${fmt(d)}</span></div><span class="badge ${badgeClass}"></span><div class="hours"></div></div><button class="secondary edit">Modifica</button>`;
+ card.querySelector('.badge').textContent=s.kind||'Riposo';card.querySelector('.hours').textContent=[detail,s.note].filter(Boolean).join(' · ')||'Nessun orario inserito';
+ card.querySelector('button').onclick=()=>openEditor(k,s);$('days').appendChild(card)
+ }
+ $('total').textContent=`${Number(total.toFixed(2))} h`;$('worked').textContent=worked;
+}
+function openEditor(k,s){$('datekey').value=k;$('formtitle').textContent='Turno · '+new Date(k+'T12:00:00').toLocaleDateString('it-IT',{weekday:'long',day:'numeric',month:'long'});$('kind').value=s.kind||'Riposo';$('start').value=s.start||'06:00';$('end').value=s.end||'14:00';$('note').value=s.note||'';$('editor').showModal()}
+$('shiftform').addEventListener('submit',e=>{e.preventDefault();let k=$('datekey').value;shifts[k]={kind:$('kind').value,start:$('start').value,end:$('end').value,note:$('note').value.trim()};save();$('editor').close()});
+$('clear').onclick=()=>{delete shifts[$('datekey').value];save();$('editor').close()};
+$('cancel').onclick=()=>$('editor').close();$('prev').onclick=()=>{offset--;render()};$('next').onclick=()=>{offset++;render()};
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}));
+render();
+</script>
+</body></html>
